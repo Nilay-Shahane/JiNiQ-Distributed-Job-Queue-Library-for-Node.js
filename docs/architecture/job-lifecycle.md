@@ -10,19 +10,20 @@ flowchart TD
 
     C -->|Heartbeat renews lock| C
 
-    C -->|Lock expires<br/>(Worker died)| D["SWEPT (Zombie)"]
+    C -->|Processor succeeds| D["COMPLETED"]
 
-    D -->|Retry or Dead| E{"Attempts ≤ MaxAttempts?"}
+    C -->|Processor fails<br/>or times out| E{"Attempts &lt; MaxAttempts?"}
 
-    C -->|User function resolves| F["COMPLETED"]
+    C -->|Lock expires<br/>Sweeper detects zombie| E
 
-    C -->|User function throws<br/>or times out| E
+    E -->|Yes| F["DELAYED (Retry)"]
 
-    E -->|Yes| G["DELAYED (Retry)"]
-    E -->|No| H["DEAD"]
+    E -->|No| G["DEAD"]
 
-    G -->|Delay elapses<br/>Sweeper migrates| B
+    F -->|Delay elapses<br/>Sweeper migrates| B
 ```
+
+
 ## States
 
 | State | Where it lives | Set by |
