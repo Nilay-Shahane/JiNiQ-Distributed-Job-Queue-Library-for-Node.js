@@ -63,7 +63,7 @@ class JobExecutor{
             controller.abort(); 
 
             try {
-                await this.dbActions.addToFailed(e.message);
+                await this.dbActions.addToFailed(e);
                 
                 // 🔴 ADDED: Broadcast crash and stack trace to the React Dashboard
                await this.dbActions.publishLog('Failed', payload, e.stack || e.message)

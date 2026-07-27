@@ -37,7 +37,6 @@ class Worker extends EventEmitter {
             maxConcurrency: options.concurrency || 1,
             storage: this.#storageInstance,
             sweeper: this.sweeper,
-            stateManager: this.stateManager, // Injected here!
             ttl: options.lockDuration || 30000,
             priorityOffset: options.priorityOffset || 10000,
             sweeperInterval: options.sweeperInterval || 30000,
@@ -60,7 +59,7 @@ class Worker extends EventEmitter {
     async stop() {
         console.log(`[Jiniq Worker] Initiating graceful shutdown...`);
         await this.supervisor.stop();
-        await this.#storageInstance.shutdown();
+        await RedisFactory.release();
         console.log(`[Jiniq Worker] Offline.`);
     }
 } 

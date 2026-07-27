@@ -219,23 +219,29 @@ class RedisStorage extends BaseStorage {
         )
     }
 
-    async addToFailed(jobId, workerId, e) {
+    async addToFailed(jobId, workerId, error) {
         const keys = [
             this.keyMap.lock,
             this.keyMap.active,
             this.keyMap.delay,
             this.keyMap.dead
-        ]
+        ];
 
-        const jobKey = `${this.keyMap.main}:${jobId}`
+        const jobKey = `${this.keyMap.main}:${jobId}`;
+
+        const errorMessage =
+            error instanceof Error
+                ? (error.stack || error.message)
+                : String(error ?? "");
 
         return await this.manager.run(
-            'addToDelayedOrDead',
+            "addToDelayedOrDead",
             ...keys,
             jobId,
             workerId,
-            jobKey
-        )
+            jobKey,
+            errorMessage
+        );
     }
 
    async publishLog(jobId, status, payload, error = null) {

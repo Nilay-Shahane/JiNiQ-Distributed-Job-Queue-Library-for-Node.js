@@ -33,7 +33,7 @@ class Supervisor extends EventEmitter {
     }
 
     start = async () => {
-        this.sweeper.start(this.#sweeperInterval);
+        this.sweeper.start();
         this.callClaimHandler();
         await this.claimHandler();
     }

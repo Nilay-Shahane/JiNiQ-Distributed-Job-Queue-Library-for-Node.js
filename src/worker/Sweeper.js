@@ -5,9 +5,10 @@ class Sweeper {
 
     constructor(storage, pollIntervalMs = 30000) {
         this.storage = storage;  
+        this.#pollIntervalMs = pollIntervalMs;
     }
 
-    start = (pollIntervalMs) => {
+    start = () => {
         if (this.#isRunning) return;
         this.#isRunning = true;
         
