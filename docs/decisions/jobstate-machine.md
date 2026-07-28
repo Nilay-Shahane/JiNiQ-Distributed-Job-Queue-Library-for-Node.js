@@ -1,8 +1,5 @@
 # ADR: Explicit Job State Machine over Independent Boolean Flags
 
-## Status
-
-Accepted
 
 ---
 
@@ -637,7 +634,7 @@ Rejected.
 
 ---
 
-# User Questions (Interview Discussion)
+# User Questions 
 
 ### Q: Why not simply keep `completed`, `failed`, and `active` booleans?
 
