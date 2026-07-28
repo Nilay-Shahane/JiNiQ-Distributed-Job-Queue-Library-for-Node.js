@@ -2,22 +2,285 @@
 
 ## Context
 
-A worker needs to run up to `maxConcurrency` jobs at once. Two broad shapes for this: (a) a single orchestrator that polls, claims, and dispatches jobs whenever a slot frees up, tracking all active work itself; or (b) `maxConcurrency` independent "lanes," each with its own poll loop, each responsible for claiming and running exactly one job at a time before claiming its next.
+A worker needs to execute up to `maxConcurrency` jobs concurrently. There are two common ways to structure this:
+
+1. A single orchestrator that polls Redis, claims jobs, tracks currently running work, and dispatches new jobs whenever execution capacity becomes available.
+2. `maxConcurrency` independent "lanes," where each lane owns one execution slot, continuously polling Redis, claiming one job, executing it, and then polling again for the next.
+
+Both approaches can achieve the same maximum throughput in theory, but they differ significantly in Redis traffic, scheduling complexity, slot utilization, observability, and maintainability.
+
+The question is not *whether multiple jobs can execute concurrently*—both designs support that—but *who should be responsible for deciding when new work is claimed.*
 
 ## Decision
 
-A single `Supervisor` per `Worker`, owning one `activeWorkers` set and one claim loop, that claims jobs one at a time in a `while (hasSlot())` loop and fires each off without waiting for it to finish.
+JiNiQ uses a single `Supervisor` instance per `Worker`.
+
+The `Supervisor` owns:
+
+- one adaptive polling loop
+- one `activeWorkers` set
+- all concurrency bookkeeping
+- all scheduling decisions
+
+Whenever capacity exists (`activeWorkers.size < maxConcurrency`), the `Supervisor` enters a `while (hasSlot())` loop and repeatedly attempts to claim work from Redis.
+
+Each successfully claimed job is immediately handed to a `JobExecutor` without waiting for previous jobs to complete. The `Supervisor` continues claiming until either:
+
+- no execution slots remain, or
+- Redis reports that no jobs are available.
+
+When a job finishes, its `.finally()` handler removes it from `activeWorkers` and immediately triggers another claim cycle, allowing the freed slot to be refilled without waiting for the next polling interval.
+
+The `Supervisor` itself never executes user code—it only schedules work.
 
 ## Alternatives considered
 
-**N independent lane pollers.** Each lane would claim a job, await its completion, then claim its next — conceptually simpler per-lane, and arguably easier to reason about in isolation. It loses out for two reasons:
-- **Uneven slot utilization.** If lane 3 claims a job that takes 10 seconds while lanes 1, 2, and 4 finish theirs in 200ms, those three lanes sit idle rather than picking up more work, unless each lane also implements the same backoff-and-poll logic the shared `Supervisor` already has — at which point you've just reimplemented the shared loop N times with more code, not less.
-- **N times the poll traffic under load.** N independent pollers each running their own backoff timer means N times the Redis round trips for claim attempts, compared to one loop that claims up to N jobs per cycle whenever slots are free.
+### N independent lane pollers
 
-**A single `Supervisor` that awaits each job before claiming the next (fully sequential).** This defeats the purpose of `maxConcurrency` entirely — it's a concurrency-1 worker regardless of the configured limit. Rejected immediately, included here only because it's the version you'd accidentally write if you `await assignJob()` inside the claim loop instead of firing it and continuing.
+Each execution slot owns its own lifecycle:
+
+```
+poll → claim → execute → repeat
+```
+
+This is conceptually simple because every lane behaves like a miniature worker.
+
+However, this design was rejected for several reasons.
+
+#### Uneven slot utilization
+
+Consider:
+
+```
+maxConcurrency = 4
+
+Job A = 10 seconds
+Job B = 200 ms
+Job C = 200 ms
+Job D = 200 ms
+```
+
+Initially all four lanes receive work.
+
+After 200 ms:
+
+- Lane 1 is still executing Job A.
+- Lanes 2–4 have finished.
+
+Those lanes cannot immediately receive more work unless each lane independently wakes up and polls Redis again.
+
+During this idle period, available worker capacity exists but remains unused.
+
+In JiNiQ, completion of any job immediately triggers another claim cycle, allowing the freed slot to be reused almost instantly instead of waiting for a polling timer.
+
+---
+
+#### Poll traffic scales with concurrency
+
+Each lane owns:
+
+- its own polling timer
+- its own adaptive backoff
+- its own retry logic
+- its own wake-up logic
+
+As concurrency increases, Redis receives proportionally more polling requests.
+
+For example:
+
+```
+maxConcurrency = 100
+```
+
+Lane architecture:
+
+```
+100 poll loops
+↓
+
+100 Redis claim attempts
+```
+
+JiNiQ:
+
+```
+1 poll loop
+
+↓
+
+claim until worker is full
+```
+
+The amount of useful work remains identical while significantly reducing unnecessary Redis round trips, timers, and duplicated scheduling logic.
+
+---
+
+#### Scheduling logic becomes duplicated
+
+Each lane must independently implement:
+
+- polling
+- adaptive backoff
+- retry handling
+- shutdown coordination
+- Redis error handling
+- wake-up logic
+
+The scheduling algorithm becomes duplicated across every execution slot.
+
+JiNiQ centralizes this responsibility inside one component, reducing implementation complexity and ensuring all execution slots follow identical scheduling behavior.
+
+---
+
+#### Harder global scheduling
+
+A lane only knows whether *its own* slot is busy.
+
+It has no awareness of:
+
+- total worker utilization
+- overall concurrency
+- scheduler state
+- global polling behavior
+
+As scheduling policies become more sophisticated (priorities, fairness, quotas, tenant isolation, rate limiting), coordinating many independent schedulers becomes increasingly complex.
+
+A centralized scheduler naturally becomes the single place where these policies can evolve.
+
+---
+
+### A single `Supervisor` that waits for every job
+
+Another possibility is:
+
+```
+claim
+
+↓
+
+execute
+
+↓
+
+await completion
+
+↓
+
+claim next
+```
+
+Although this uses one polling loop, it effectively limits the worker to executing one job at a time regardless of `maxConcurrency`.
+
+This completely defeats the purpose of configurable concurrency and was rejected.
 
 ## Consequences
 
-- **Slot utilization stays high regardless of individual job duration** — a fast-finishing job's slot gets refilled on the very next `claimHandler()` trigger (fired directly from that job's own `.finally()`), not on a fixed timer tick.
-- **Single point of concurrency bookkeeping.** `activeWorkers.size` is the one source of truth for "how many jobs are running," which is simpler to reason about (and debug) than reconciling state across N independent lane objects.
-- **Cost: the claim loop and job execution are more tightly coupled than a lane-based design would be.** `Supervisor` needs to know about `JobExecutor` construction directly (`assignJob` builds the executor), rather than lanes being a clean, swappable abstraction boundary. For JiNiQ's current scope this is an acceptable coupling; it would be worth revisiting if `JobExecutor` construction needed to vary significantly per-job-type in the future.
+### High slot utilization
+
+Whenever a job completes, the freed slot is immediately eligible for another claim.
+
+The worker spends far less time with idle execution capacity compared to timer-driven lane polling.
+
+### Lower Redis traffic
+
+Only one scheduler communicates with Redis to discover new work.
+
+Instead of many independent pollers asking the same question simultaneously, one scheduler fills every available slot in a single claim cycle.
+
+This reduces:
+
+- Redis round trips
+- timer wake-ups
+- unnecessary claim attempts
+
+especially for workers with high concurrency.
+
+### Centralized concurrency bookkeeping
+
+`activeWorkers` becomes the single source of truth for worker state.
+
+The `Supervisor` always knows:
+
+- running job count
+- available execution slots
+- scheduler activity
+- shutdown readiness
+
+No state reconciliation between independent lane objects is required.
+
+### Simpler observability
+
+Because all scheduling decisions pass through one component, metrics become easier to expose.
+
+Examples include:
+
+- current concurrency
+- scheduler utilization
+- claim latency
+- empty poll frequency
+- claim failures
+- worker idle time
+
+No aggregation across multiple schedulers is necessary.
+
+### Simpler graceful shutdown
+
+Stopping a worker becomes straightforward:
+
+1. Stop accepting new work.
+2. Allow active jobs to finish.
+3. Exit once `activeWorkers` becomes empty.
+
+With independent lanes, shutdown coordination must occur across every lane individually.
+
+### Future scheduling policies have a single implementation point
+
+Features such as:
+
+- priority scheduling
+- fairness improvements
+- tenant quotas
+- execution throttling
+- adaptive polling strategies
+
+can all be implemented inside one scheduler instead of being duplicated across every execution lane.
+
+### The `Supervisor` is not a runtime bottleneck
+
+Although all scheduling passes through the `Supervisor`, it performs very little work.
+
+Its responsibilities are limited to:
+
+- claiming jobs
+- constructing `JobExecutor`s
+- tracking active executions
+
+Actual job execution occurs asynchronously inside separate `JobExecutor` instances.
+
+The `Supervisor` dispatches work but never performs the work itself.
+
+### Cost: tighter coupling between scheduling and execution
+
+The `Supervisor` directly constructs `JobExecutor` instances.
+
+This couples scheduling with executor creation more tightly than a lane-based abstraction would.
+
+For JiNiQ's current scope, this keeps the implementation considerably simpler.
+
+If future versions support multiple execution backends (for example, sandboxed runtimes, remote executors, or specialized execution engines), introducing an `ExecutorFactory` or similar abstraction would likely become worthwhile.
+
+### Cost: the `Supervisor` becomes the scheduling authority
+
+The scheduler is intentionally responsible for all claim decisions.
+
+This centralization increases the importance of keeping the scheduling loop small, deterministic, and non-blocking.
+
+JiNiQ ensures this by limiting the `Supervisor` to coordination responsibilities only; user job execution always occurs asynchronously outside the scheduler.
+
+## Rationale
+
+The core observation behind this decision is that **execution slots are not independent workers—they are simply available capacity within the same worker process.**
+
+Since scheduling decisions depend on shared state (`maxConcurrency`, currently running jobs, polling state, and Redis availability), centralizing scheduling avoids duplicated coordination logic while improving slot utilization, reducing Redis traffic, simplifying observability, and providing a single foundation for future scheduling policies.
+
+The result is a worker architecture that remains fully concurrent while keeping scheduling deterministic, efficient, and easy to reason about.
