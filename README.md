@@ -179,13 +179,54 @@ What's already true by design, independent of raw throughput numbers:
 - **Zero polling overhead when idle** — worker poll interval backs off exponentially (up to 2s) when the queue is empty, instead of hammering Redis continuously.
 
 ---
+## Learn More
+
+JiNiQ is documented from the outside in:
+
+- **Architecture** explains how the system is built.
+- **Design Decisions** explains *why* it was built that way.
+- **Internals** walks through the core Node.js components.
+- **Lua Scripts** documents every atomic Redis operation.
+- **Reliability** covers crash recovery, retries, consistency, and graceful shutdown.
+
+See the documentation below to dive deeper.
+
 
 ## Documentation
 
-- [Architecture Deep Dive](./docs/ARCHITECTURE.md) *(in progress)*
-- [Lua Script Reference](./docs/LUA_SCRIPTS.md) *(in progress)*
-- [API Reference](./docs/API.md) *(in progress)*
-- [Failure Modes & Recovery](./docs/FAILURE_MODES.md) *(in progress)*
+### Architecture
+- [Overview](./docs/architecture/overview.md)
+- [System Components](./docs/architecture/components.md)
+- [Execution Flow](./docs/architecture/execution-flow.md)
+- [Job Lifecycle](./docs/architecture/job-lifecycle.md)
+- [Redis Data Model](./docs/architecture/redis-data-model.md)
+
+### Design Decisions
+- [Decision Index](./docs/decisions/README.md)
+- [Heartbeat Leases](./docs/decisions/heartbeat-leases.md)
+- [Lua over Transactions](./docs/decisions/lua-over-transactions.md)
+- [Polling over Pub/Sub](./docs/decisions/polling-over-pubsub.md)
+- [Redis ZSETs over Streams](./docs/decisions/redis-over-streams.md)
+
+### Internals
+- [Supervisor](./docs/internals/Supervisor.md)
+- [Job Executor](./docs/internals/JobExecutor.md)
+- [Heartbeat & Sweeper](./docs/internals/Hb&Sweeper.md)
+- [Redis Storage Layer](./docs/internals/RedisStorage.md)
+
+### Lua Scripts
+- [Overview](./docs/lua-docs/overview.md)
+- [Add Job](./docs/lua-docs/add-job.md)
+- [Claim Job](./docs/lua-docs/claimjob.md)
+- [Heartbeat Renewal](./docs/lua-docs/heartbeat.md)
+- [Complete Job](./docs/lua-docs/complete.md)
+- [Sweeper](./docs/lua-docs/sweeper.md)
+
+### Reliability
+- [Consistency Guarantees](./docs/reliability/consistency.md)
+- [Failure Recovery](./docs/reliability/failure-recovery.md)
+- [Graceful Shutdown](./docs/reliability/graceful-shutdown.md)
+- [Retries & Dead Jobs](./docs/reliability/retries-and-dead-jobs.md)
 
 ---
 
