@@ -1,21 +1,247 @@
-# ADR: Polling (with backoff) as the source of truth; Pub/Sub as a hint only
+# ADR: Polling (with Adaptive Backoff) as the Source of Truth
 
 ## Context
 
-`addJobtoQueue` publishes the new job's ID to a `notify` Pub/Sub channel on every successful insert. It would be possible to make this the *primary* claim-triggering mechanism — subscribe every idle worker to `notify` and have them attempt a claim immediately on message receipt, eliminating most polling latency. JiNiQ doesn't do this; `notify` is published but nothing currently subscribes to drive claims from it. Claiming is driven entirely by `Supervisor`'s poll-with-backoff loop.
+One of the most important architectural decisions in a distributed job queue is **how idle workers discover new work**.
+
+There are two common approaches:
+
+1. **Worker-driven polling**
+   - Workers periodically ask Redis whether a job is available.
+   - If a job exists, they atomically claim it.
+
+2. **Producer-driven notifications**
+   - Whenever a producer inserts a new job, it publishes a message (typically using Redis Pub/Sub).
+   - Idle workers wake immediately and attempt a claim.
+
+At first glance, the second approach appears superior because it removes almost all idle latency. A worker can remain asleep indefinitely and wake only when new work arrives.
+
+JiNiQ deliberately does **not** make notifications part of the correctness path.
+
+Today, producers simply insert jobs into Redis. They do **not** publish notifications, and workers never wait on Pub/Sub messages before attempting a claim.
+
+Instead, every `Supervisor` independently executes an adaptive polling loop:
+
+- Begin polling every **50 ms**
+- Continue claiming until either:
+  - no work exists, or
+  - all worker slots are full
+- If no work exists:
+  - exponentially increase the polling interval
+  - cap the delay at **2000 ms**
+- Whenever work is found again:
+  - immediately reset polling back to **50 ms**
+
+This makes Redis itself—not notifications—the only source of truth for job discovery.
+
+---
 
 ## Decision
 
-Polling (with exponential backoff, 50ms–2000ms) is the only mechanism that actually triggers a claim attempt. The `notify` channel exists in the data model but is not wired into the claim path.
+JiNiQ uses **adaptive polling as the only mechanism that guarantees job discovery**.
+
+Every worker periodically asks Redis whether work exists by executing the atomic Lua claim script.
+
+No notification is required for a worker to discover work.
+
+This decision intentionally prioritizes:
+
+- liveness
+- eventual job execution
+- failure tolerance
+- deterministic recovery
+
+over achieving the absolute minimum idle latency.
+
+Notifications (Redis Pub/Sub) are intentionally treated as a future optimization rather than part of the correctness model.
+
+---
 
 ## Alternatives considered
 
-**Pub/Sub-driven claiming as the primary mechanism.** Genuinely lower latency for the common case — a worker sitting idle at the top of its backoff curve (up to 2000ms) would otherwise wait out that interval instead of reacting instantly to a `PUBLISH`. This wasn't adopted as the *primary* path for a specific reason: **Redis Pub/Sub delivers at-most-once, to currently-subscribed clients only.** A worker that's briefly disconnected, mid-reconnect, or just hasn't subscribed yet when a message is published simply never receives it — there's no replay, no queue, no delivery guarantee. Relying on it as the *only* trigger would mean a job could sit unclaimed indefinitely if its `notify` message was published into a gap with no active subscriber, even though the job is sitting perfectly claimable in its ZSET the whole time.
+### Alternative 1 — Pure Pub/Sub-driven claiming
 
-**Pub/Sub as a supplementary fast-path, polling as the guaranteed fallback.** This is closer to the eventual right answer, and is a reasonable next iteration: subscribe to `notify` and trigger an out-of-cycle `claimHandler()` call on message receipt (the same event the backoff timer already fires), *without* removing the poll loop itself. Not yet implemented — flagged here as a known, deliberate gap rather than an oversight, since the channel is already being published to and the wiring cost is small.
+The most obvious alternative is:
 
-## Consequences
+```
+Producer
+    │
+Add Job
+    │
+PUBLISH notify
+    │
+Workers wake immediately
+    │
+Claim until queue empty
+    │
+Sleep until next notification
+```
 
-- **Correctness never depends on Pub/Sub delivery.** Every job that lands in a waiting ZSET *will* eventually be claimed by ordinary polling, with a worst-case latency bound of the current backoff interval — never "possibly never," regardless of subscriber timing.
-- **Cost: idle-queue-to-first-claim latency is bounded by the backoff ceiling (2000ms) rather than near-instant.** For workloads sensitive to that latency, wiring `notify` as a supplementary trigger (per the alternative above) is the direct fix.
-- **The `notify` channel currently has no consumer**, which is worth being upfront about — it's published, unused, and represents a specific, scoped piece of unfinished work rather than a fully-realized feature.
+This has an obvious benefit:
+
+- almost zero idle latency
+- no unnecessary polling
+- workers remain asleep when queues are empty
+
+Unfortunately, this architecture has a fundamental correctness problem.
+
+Redis Pub/Sub provides **at-most-once delivery**.
+
+Messages are:
+
+- not persisted
+- not acknowledged
+- not replayed
+- delivered only to clients currently subscribed
+
+If a notification is missed for any reason, Redis never attempts delivery again.
+
+For example:
+
+```
+Worker disconnects
+
+↓
+
+Producer inserts Job A
+
+↓
+
+PUBLISH notify
+
+↓
+
+No subscribers receive message
+
+↓
+
+Worker reconnects
+
+↓
+
+Queue contains Job A
+
+↓
+
+No further notifications occur
+
+↓
+
+Worker sleeps forever
+```
+
+The job still exists inside Redis.
+
+The queue is healthy.
+
+Nothing is corrupted.
+
+Yet no worker ever attempts another claim.
+
+The system has lost its **liveness guarantee** because discovering work depends entirely on a transient notification that no longer exists.
+
+This violates one of JiNiQ's primary design goals:
+
+> Every successfully inserted job should eventually execute, regardless of temporary network failures or worker restarts.
+
+---
+
+### Alternative 2 — Publish notifications continuously
+
+Another possible design is:
+
+```
+Producer
+
+Every insert
+
+↓
+
+PUBLISH notify
+```
+
+This still suffers from exactly the same failure mode.
+
+The issue is not whether producers publish frequently.
+
+The issue is:
+
+> What happens if **one** notification is lost?
+
+Once a notification disappears, no future event necessarily wakes sleeping workers.
+
+The queue can remain permanently idle despite containing executable jobs.
+
+---
+
+### Alternative 3 — Worker sleeps forever after draining queue
+
+An interviewer may suggest:
+
+> "Workers can simply keep claiming until the queue becomes empty, then block waiting for the next notification."
+
+This appears attractive because workers avoid unnecessary polling.
+
+However, this simply shifts the dependency onto Pub/Sub.
+
+Consider a startup race:
+
+```
+Worker starting
+
+↓
+
+Connecting to Redis
+
+↓
+
+Producer inserts Job
+
+↓
+
+Notification published
+
+↓
+
+Worker finishes startup
+
+↓
+
+Subscribes
+
+↓
+
+Waits forever
+```
+
+The notification occurred before the subscription existed.
+
+Redis does not replay missed messages.
+
+Polling immediately recovers from this situation.
+
+Pure Pub/Sub does not.
+
+---
+
+### Alternative 4 — Hybrid model (Recommended Future Direction)
+
+The strongest alternative combines both mechanisms:
+
+```
+Producer
+
+↓
+
+Insert Job
+
+↓
+
+PUBLISH notify
+
+↓
+
+Workers immediately execute claimHandler()
+```
+
+while simultaneously keeping the
