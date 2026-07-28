@@ -670,7 +670,6 @@ which means Lua would still be required for correctness.
 
 ---
 
-## Common interview questions
 
 ### "Isn't `MULTI` atomic?"
 
