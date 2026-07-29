@@ -1,33 +1,51 @@
-class JobExecutor{
-    constructor(Heartbeat , jobId , workerId, ttl ,maxTimeoutMs ,  userProcess , dbActions){
-        this.ttl = ttl
-        this.maxTimeoutMs = maxTimeoutMs
-        this.workerId = workerId 
-        this.jobId = jobId 
-        this.userProcess = userProcess
-        this.Heartbeat = Heartbeat
-        this.dbActions = dbActions
+class JobExecutor {
+    constructor(Heartbeat, jobId, workerId, ttl, maxTimeoutMs, userProcess, dbActions) {
+        this.ttl = ttl;
+        this.maxTimeoutMs = maxTimeoutMs;
+        this.workerId = workerId;
+        this.jobId = jobId;
+        this.userProcess = userProcess;
+        this.Heartbeat = Heartbeat;
+        this.dbActions = dbActions;
     }
 
-
     beginWork = async () => {
+
+        console.log(`\n[Job ${this.jobId}] Started (Worker ${this.workerId})\n`);
+
         const controller = new AbortController();
-        const newHeartbeatInstance = new this.Heartbeat(this.ttl, this.workerId, this.jobId, this.dbActions, () => controller.abort());
+
+        const newHeartbeatInstance = new this.Heartbeat(
+            this.ttl,
+            this.workerId,
+            this.jobId,
+            this.dbActions,
+            () => controller.abort()
+        );
+
         let timeoutId;
-        
-        // Hoisted so the catch block can send the payload to the dashboard if it crashes
-        let payload = null; 
+        let payload = null;
 
         try {
+
             payload = await this.dbActions.getPayload(this.jobId);
-            
+
             await newHeartbeatInstance.startHeartbeatProcess();
-            
+
             const timeoutPromise = new Promise((_, reject) => {
+
                 timeoutId = setTimeout(() => {
+
                     controller.abort();
-                    reject(new Error(`JOB_TIMEOUT: Process exceeded max execution time of ${this.maxTimeoutMs}ms`));
+
+                    reject(
+                        new Error(
+                            `JOB_TIMEOUT: Process exceeded ${this.maxTimeoutMs}ms`
+                        )
+                    );
+
                 }, this.maxTimeoutMs);
+
             });
 
             const resp = await Promise.race([
@@ -35,48 +53,69 @@ class JobExecutor{
                 timeoutPromise
             ]);
 
-            clearTimeout(timeoutId); 
+            clearTimeout(timeoutId);
 
             try {
+
                 const completed = await this.dbActions.addToCompleted();
 
-                if(completed !== 1){
-                    console.warn(
-                        `Job ${this.jobId} completion rejected. Ownership lost`
+                if (completed === 1) {
+                    await this.dbActions.publishLog(
+                        'Completed',
+                        payload
                     );
-                    return resp;
                 }
 
-                await this.dbActions.publishLog(
-                    'Completed',
-                    payload
-                );
-                
             } catch (dbErr) {
-                console.error(`CRITICAL: Job ${this.jobId} succeeded but failed to mark as complete.`, dbErr);
+
+                console.error(
+                    `[Job ${this.jobId}] Failed to persist completion`
+                );
+                console.error(dbErr);
+
             }
 
-            return resp; 
+            console.log(`\n[Job ${this.jobId}] ✓ Completed\n`);
+
+            return resp;
 
         } catch (e) {
+
             clearTimeout(timeoutId);
-            controller.abort(); 
+
+            controller.abort();
 
             try {
+
                 await this.dbActions.addToFailed(e);
-                
-                // 🔴 ADDED: Broadcast crash and stack trace to the React Dashboard
-               await this.dbActions.publishLog('Failed', payload, e.stack || e.message)
+
+                await this.dbActions.publishLog(
+                    'Failed',
+                    payload,
+                    e.stack || e.message
+                );
+
             } catch (dbErr) {
-                console.error(`Failed to record failed job: ${dbErr}`);
+
+                console.error(
+                    `[Job ${this.jobId}] Failed to persist failure`
+                );
+                console.error(dbErr);
+
             }
-            
-            // To answer your question: Yes, keep this!
-            throw e; 
+
+            console.error(`\n[Job ${this.jobId}] ✗ Failed`);
+            console.error(e.message);
+            console.error();
+
+            throw e;
+
         } finally {
+
             newHeartbeatInstance.setStopHeartBeat(true);
+
         }
     }
 }
 
-module.exports = JobExecutor
+module.exports = JobExecutor;

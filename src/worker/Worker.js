@@ -26,7 +26,7 @@ class Worker extends EventEmitter {
         this.#storageInstance = new RedisStorage(queueName, manager, fetcher, redisConfig);
 
      
-        this.sweeper = new Sweeper(this.#storageInstance, options.sweeperInterval || 30000);
+        this.sweeper = new Sweeper(this.#storageInstance, options.sweeperInterval || 7000);
         
 
         this.supervisor = new Supervisor({
@@ -39,7 +39,7 @@ class Worker extends EventEmitter {
             sweeper: this.sweeper,
             ttl: options.lockDuration || 30000,
             priorityOffset: options.priorityOffset || 10000,
-            sweeperInterval: options.sweeperInterval || 30000,
+            sweeperInterval: options.sweeperInterval || 7000,
             maxTimeoutMs: options.maxTimeoutMs || 300000 
         });
         this.supervisor.on('job:completed', (data) => {

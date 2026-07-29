@@ -1,35 +1,43 @@
-class HeartBeat{
-    #stopHeartbeat = false
-    #resolveSleep = null
-    #timeoutId = null
-    constructor(ttl,workerId , jobId , dbActions , abortFn){
-        this.ttl = ttl
-        this.workerId = workerId 
-        this.jobId = jobId
-        this.dbActions = dbActions
-        this.abortFn = abortFn
+class HeartBeat {
+    #stopHeartbeat = false;
+    #resolveSleep = null;
+    #timeoutId = null;
+
+    constructor(ttl, workerId, jobId, dbActions, abortFn) {
+        this.ttl = ttl;
+        this.workerId = workerId;
+        this.jobId = jobId;
+        this.dbActions = dbActions;
+        this.abortFn = abortFn;
     }
+
     sleep = (ms) => {
         return new Promise((resolve) => {
             this.#resolveSleep = resolve;
-            this.#timeoutId = setTimeout(()=>{
-                this.#resolveSleep = null
+
+            this.#timeoutId = setTimeout(() => {
+                this.#resolveSleep = null;
                 this.#timeoutId = null;
-                resolve()
-            },ms)
-        })
+                resolve();
+            }, ms);
+        });
     }
-    
-    getStopHeartBeat(){
-        return this.#stopHeartbeat
+
+    getStopHeartBeat() {
+        return this.#stopHeartbeat;
     }
-    setStopHeartBeat(value){
-        this.#stopHeartbeat = value
-        if(value){
+
+    setStopHeartBeat(value) {
+
+        this.#stopHeartbeat = value;
+
+        if (value) {
+
             if (this.#timeoutId) {
                 clearTimeout(this.#timeoutId);
                 this.#timeoutId = null;
             }
+
             if (this.#resolveSleep) {
                 this.#resolveSleep();
                 this.#resolveSleep = null;
@@ -37,48 +45,82 @@ class HeartBeat{
         }
     }
 
-    randomOffset = async () =>{
-        const jitter = Math.random() * 50 
-        await this.sleep(jitter)
+    randomOffset = async () => {
+
+        const jitter = Math.random() * 50;
+        await this.sleep(jitter);
+
     }
 
-
     runHeartbeat = async () => {
+
         try {
+
             while (!this.#stopHeartbeat) {
 
-                await this.sleep(this.ttl / 3)
+                await this.sleep(this.ttl / 3);
 
                 if (this.#stopHeartbeat) break;
 
-                let heartBeatResp = await this.dbActions.checkAndUpdateHeartbeat()
-                if(heartBeatResp!==1){
-                    this.setStopHeartBeat(true) 
-                    if(this.abortFn) this.abortFn()
-                    break
-                }
+                const heartBeatResp =
+                    await this.dbActions.checkAndUpdateHeartbeat();
 
+                if (heartBeatResp !== 1) {
+
+                    console.warn(
+                        `\n[Heartbeat ${this.jobId}] Lease lost. Aborting worker.\n`
+                    );
+
+                    this.setStopHeartBeat(true);
+
+                    if (this.abortFn) {
+                        this.abortFn();
+                    }
+
+                    break;
+                }
             }
 
         } catch (e) {
-            this.setStopHeartBeat(true) 
-            if(this.abortFn) this.abortFn()
+
+            console.error(
+                `\n[Heartbeat ${this.jobId}] Heartbeat crashed`
+            );
+            console.error(e);
+            console.error();
+
+            this.setStopHeartBeat(true);
+
+            if (this.abortFn) {
+                this.abortFn();
+            }
         }
     }
 
-    startHeartbeatProcess = async() =>{
-        await this.randomOffset()
+    startHeartbeatProcess = async () => {
 
-        let resp = await this.dbActions.checkAndUpdateHeartbeat()
+        await this.randomOffset();
 
-        if(resp !== 1){
-            this.setStopHeartBeat(true)
-            if(this.abortFn) this.abortFn()
+        const resp =
+            await this.dbActions.checkAndUpdateHeartbeat();
+
+        if (resp !== 1) {
+
+            console.warn(
+                `\n[Heartbeat ${this.jobId}] Initial lease validation failed\n`
+            );
+
+            this.setStopHeartBeat(true);
+
+            if (this.abortFn) {
+                this.abortFn();
+            }
+
             return;
         }
 
-        this.runHeartbeat()
+        this.runHeartbeat();
     }
 }
 
-module.exports = HeartBeat
+module.exports = HeartBeat;
