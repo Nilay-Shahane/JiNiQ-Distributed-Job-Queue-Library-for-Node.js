@@ -54,17 +54,24 @@ class JobExecutor {
             ]);
 
             clearTimeout(timeoutId);
+            const completed = await this.dbActions.addToCompleted();
+            if (completed === 0) {
+
+                    console.log("Zombie worker detected.");
+                    throw new Error("LEASE_LOST");
+
+                }
 
             try {
 
-                const completed = await this.dbActions.addToCompleted();
-
+                
                 if (completed === 1) {
                     await this.dbActions.publishLog(
                         'Completed',
                         payload
                     );
                 }
+                
 
             } catch (dbErr) {
 
@@ -84,6 +91,14 @@ class JobExecutor {
             clearTimeout(timeoutId);
 
             controller.abort();
+            if (e.message === "LEASE_LOST") {
+
+                console.warn(
+                    `[Job ${this.jobId}] Lease lost. Discarding stale result.`
+                );
+
+                throw e;
+            }
 
             try {
 
