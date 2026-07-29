@@ -18,7 +18,9 @@ flowchart LR
 
 ### 📍 Where this story is going
 
-If you've ever written `queue.add(job)` and moved on with your day, this doc is for you. It walks through the exact sequence of problems every growing application hits — the same sequence, every time — and shows why each one quietly forces you toward the same conclusion.
+If you've ever written a function that sends an email, processes a payment, generates a report, or handles some background work — and just called it directly — this doc is for you.
+
+It walks through the exact sequence of problems every growing application hits: when simple function calls slowly turn into unreliable background work, and why each problem naturally pushes you toward building a proper job queue.
 
 You don't have to take our word for it. Read the journey, and see if you don't arrive at the same place we did.
 
