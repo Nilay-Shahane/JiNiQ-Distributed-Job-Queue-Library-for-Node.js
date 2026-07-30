@@ -51,7 +51,7 @@ class Job {
     this.#id = id;
     this.#name = name;
     this.#payload = payload;
-    this.#priority = priority;
+    this.#priority = validatedPriority;
     this.#delay = delay;
     this.#ttl = ttl;
     this.#timeout = timeout;

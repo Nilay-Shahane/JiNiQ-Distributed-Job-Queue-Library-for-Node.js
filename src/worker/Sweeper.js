@@ -1,10 +1,12 @@
 class Sweeper {
     #intervalId = null;
     #isRunning = false;
+    #pollIntervalMs;
+    #storage;
 
-    constructor(storage, pollIntervalMs = 5000) {
-        this.storage = storage;
-        this.pollIntervalMs = pollIntervalMs;
+    constructor(storage, pollIntervalMs = 30000) {
+        this.#storage = storage;
+        this.#pollIntervalMs = pollIntervalMs;
     }
 
     start = () => {
@@ -12,31 +14,19 @@ class Sweeper {
         if (this.#isRunning) return;
 
         this.#isRunning = true;
-
-        console.log(`\n[Sweeper] Started (${this.pollIntervalMs}ms interval)\n`);
+        
+        console.log(`[Sweeper] Started running every ${this.#pollIntervalMs}ms`);
 
         this.#intervalId = setInterval(async () => {
-
             try {
-
                 const sweptCount = await this.storage.sweepZombies();
-
                 if (sweptCount > 0) {
-                    console.log(
-                        `\n[Sweeper] Recovered ${sweptCount} zombie job(s)\n`
-                    );
+                    console.log(`[Sweeper] Recovered ${sweptCount} zombie job(s).`);
                 }
-
             } catch (error) {
-
-                console.error(`\n[Sweeper] Sweep failed`);
-                console.error(error);
-                console.error();
-
+                console.error("[Sweeper] Error during sweeping cycle:", error);
             }
-
-        }, this.pollIntervalMs);
-
+        }, this.#pollIntervalMs);
         this.#intervalId.unref();
     }
 
@@ -52,5 +42,4 @@ class Sweeper {
         console.log(`\n[Sweeper] Stopped\n`);
     }
 }
-
 module.exports = Sweeper;

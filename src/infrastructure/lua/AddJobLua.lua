@@ -30,9 +30,8 @@ if redis.call("EXISTS", jobKey) == 1 then
 end
 
 if maxQueueSize > 0 then
-    local currentNormalSize = redis.call("LLEN", normalKey)
-    local currentPrioritySize = redis.call("ZCARD", priorityKey)
-    
+   local currentNormalSize = redis.call("ZCARD", normalKey)
+   local currentPrioritySize = redis.call("ZCARD", priorityKey)
     if (currentNormalSize + currentPrioritySize) >= maxQueueSize then
         return -1
     end

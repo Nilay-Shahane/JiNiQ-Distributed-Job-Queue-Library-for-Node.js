@@ -4,7 +4,7 @@ const RedisStorage = require('../infrastructure/db/RedisStorage');
 const Supervisor = require('./Supervisor');
 const Sweeper = require('./Sweeper');
 const JobExecutor = require('./JobExecutor');
-const HeartBeat = require('./HeartBeat');
+const HeartBeat = require('./Heartbeat');
 
 class Worker extends EventEmitter {
     #storageInstance;
