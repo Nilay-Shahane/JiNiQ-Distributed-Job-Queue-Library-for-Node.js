@@ -14,7 +14,7 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
             console.log("================================");
 
             console.log("Downloading image...");
-            await sleep(3000);
+            await sleep(10000);
 
             console.log("Applying AI filters...");
             await sleep(3000);
@@ -36,7 +36,7 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
             lockDuration: 3000,
 
             // Sweeper checks frequently
-            sweeperInterval: 3000
+            sweeperInterval: 10000
         }
     );
 

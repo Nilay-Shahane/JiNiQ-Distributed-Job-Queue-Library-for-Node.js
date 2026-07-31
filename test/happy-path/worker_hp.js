@@ -14,7 +14,7 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
             console.log("================================");
 
             console.log("resizing image...");
-            await sleep(3000);
+            await sleep(12000);
 
 
             console.log("✅ Processing Finished");

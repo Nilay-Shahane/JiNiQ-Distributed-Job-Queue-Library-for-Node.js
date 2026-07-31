@@ -2,7 +2,7 @@ const Jiniq = require("../../src/queue/Jiniq");
 
 (async () => {
 
-    const queue = new Jiniq("image-processing");
+    const queue = new Jiniq("hearbeat-failure-processing");
 
     console.log("\n📦 Producer adding image-processing job...\n");
 

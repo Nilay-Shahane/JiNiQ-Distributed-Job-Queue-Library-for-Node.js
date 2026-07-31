@@ -51,7 +51,7 @@ function sleepSync(ms) {
             lockDuration: 3000,
 
             // Sweeper checks frequently
-            sweeperInterval: 10000
+            sweeperInterval: 15000
         }
     );
 

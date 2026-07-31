@@ -5,7 +5,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 (async () => {
 
     const worker = new Worker(
-        "image-processing",
+        "hearbeat-failure-processing",
 
         async (job) => {
 
