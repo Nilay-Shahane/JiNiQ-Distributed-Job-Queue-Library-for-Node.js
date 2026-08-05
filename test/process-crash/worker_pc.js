@@ -26,17 +26,17 @@ const failureTracker = new Map();
                 failureTracker.set(job.id, 1);
 
                 console.log("Connecting to Email Service...");
-                await sleep(1000);
+                await sleep(5000);
 
                 console.log("Connection Lost!");
                 throw new Error("Connection reset by peer (SendGrid API)");
             }
 
             console.log("Retry Attempt...");
-            await sleep(1000);
+            await sleep(7000);
 
             console.log("Sending Welcome Email...");
-            await sleep(1500);
+            await sleep(2500);
 
             console.log("✅ Email Sent Successfully!");
 
