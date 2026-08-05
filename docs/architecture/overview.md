@@ -5,7 +5,7 @@ JiNiQ has two halves that never talk to each other directly: **producers** (the 
 ## The two halves
 
 **Producer side (`Jiniq`)**
-A thin class over `RedisStorage`. `addJob()` and `addBulk()` serialize a job, run it through the `addJobtoQueue` Lua script (which handles dedup, capacity checks, and routing into the right ZSET), and emit a local event (`job:submitted`) for anyone listening in-process. The producer does not know or care whether a worker exists.
+A thin class over `RedisStorage`. `addJob()` and `addBulk()` serialize a job, run it through the `addJobtoQueue` Lua script (which handles dedup, capacity checks, and routing into the right ZSET), and emit a local event (`job:submitted` / `jobs:submitted:bulk`) for anyone listening in-process. The producer does not know or care whether a worker exists.
 
 **Worker side (`Worker` → `Supervisor` → `JobExecutor`)**
 A `Worker` owns one `Supervisor`, which is a polling loop that claims jobs whenever it has a free concurrency slot and hands each claimed job to a `JobExecutor`. Each `JobExecutor` runs your processor function, keeps a `HeartBeat` alive for the duration, and reports the outcome back to Redis. A `Sweeper` runs on a separate timer, independently reclaiming jobs whose worker died mid-execution.
@@ -23,14 +23,15 @@ Putting all the coordination logic in Redis (via Lua) rather than in the Node pr
 ```mermaid
 flowchart LR
     subgraph Producer
-        A["Jiniq.addJob()"]
+        A["Jiniq.addJob() / addBulk()"]
     end
 
     subgraph Redis
-        B["Priority / Normal ZSET"]
+        B["Priority / Normal / Delay ZSETs"]
         C["Active List + Lock Key"]
         D["Completed Queue"]
         E["Delayed / Dead Queue"]
+        H["Job Hash (Metadata)"]
     end
 
     subgraph Worker
@@ -39,12 +40,17 @@ flowchart LR
     end
 
     A -- "Lua: Add Job" --> B
+    A -- "Writes Payload" --> H
     B -- "Supervisor polls & claims via Lua" --> C
     C --> F
     F --> G
     G -- "Heartbeat renews lock" --> C
     G -- "Success" --> D
     G -- "Retry / Failure" --> E
+    G -- "Updates Status" --> H
+
 ```
 
-See [`job-lifecycle.md`](./job-lifecycle.md) for the full state machine and [`redis-data-model.md`](./redis-data-model.md) for exactly what's stored where.
+See [`job-lifecycle.md`](https://www.google.com/search?q=./job-lifecycle.md) for the full state machine and [`redis-data-model.md`](https://www.google.com/search?q=./redis-data-model.md) for exactly what's stored where.
+
+```

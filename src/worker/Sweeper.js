@@ -19,7 +19,7 @@ class Sweeper {
 
         this.#intervalId = setInterval(async () => {
             try {
-                const sweptCount = await this.storage.sweepZombies();
+                const sweptCount = await this.#storage.sweepZombies();
                 if (sweptCount > 0) {
                     console.log(`[Sweeper] Recovered ${sweptCount} zombie job(s).`);
                 }

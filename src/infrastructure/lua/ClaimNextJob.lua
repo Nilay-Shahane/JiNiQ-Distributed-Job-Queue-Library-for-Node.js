@@ -3,6 +3,7 @@
 -- KEYS[3] = active list
 -- KEYS[4] = lock prefix
 -- KEYS[5] = delay zset  <-- [NEW] We need to pass the delay queue key!
+-- KEYS[6] = job hash prefix
 
 -- ARGV[1] = ttl (ms)
 -- ARGV[2] = now (timestamp)
@@ -14,6 +15,7 @@ local normalQ   = KEYS[2]
 local activeQ   = KEYS[3]
 local lockPrefix = KEYS[4]
 local delayQ    = KEYS[5]
+local jobHashPrefix = KEYS[6]
 
 local ttl       = tonumber(ARGV[1])
 local now       = tonumber(ARGV[2])
@@ -50,13 +52,14 @@ if #prioData > 0 and #normData > 0 then
     local normId    = normData[1]
     local normScore = tonumber(normData[2])
 
-    if (prioScore - offset) <= normScore then
-        jobId = prioId
-        source = priorityQ
-    else
-        jobId = normId
-        source = normalQ
-    end
+  if prioScore <= normScore then
+    jobId = prioId
+    source = priorityQ
+else
+    jobId = normId
+    source = normalQ
+end
+
 elseif #prioData > 0 then
     jobId = prioData[1]
     source = priorityQ
@@ -79,6 +82,7 @@ if jobId then
     local jobKey = lockPrefix .. ":" .. jobId 
 
     if redis.call('EXISTS', jobKey) == 1 then
+        redis.call('ZREM', source, jobId)
         return 0
     end
 
@@ -91,6 +95,11 @@ if jobId then
     -- Remove from source queue
     redis.call('ZREM', source, jobId)
 
+    --Set job status to active metadata is updated
+    redis.call('HSET', jobHashPrefix .. ":" .. jobId,
+        'status', 'active',
+        'workerId', workerId,
+        'startedAt', now)
     return jobId
 end
 

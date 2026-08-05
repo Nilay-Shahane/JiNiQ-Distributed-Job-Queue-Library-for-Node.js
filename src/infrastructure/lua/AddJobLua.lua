@@ -16,7 +16,7 @@ local jobKey = KEYS[1]
 local priorityKey = KEYS[2]
 local normalKey = KEYS[3]
 local delayKey = KEYS[4]
-local notifyChannel = KEYS[5]
+
 
 local jobId = ARGV[1]
 local priorityString = ARGV[2]
@@ -45,6 +45,7 @@ redis.call("HSET", jobKey, unpack(ARGV, 7))
 if delay > 0 then
     local runAt = timestamp + delay
     redis.call("ZADD", delayKey, runAt, jobId)
+    redis.call("HSET", jobKey, "runAt", runAt)
     
 elseif priorityString == "high" then
     local score = timestamp - priorityOffset
@@ -55,6 +56,5 @@ else
     redis.call("ZADD", normalKey, timestamp, jobId)
 end
  
-redis.call("PUBLISH", notifyChannel, jobId);
 
 return 1

@@ -12,7 +12,7 @@ flowchart TD
 
     C -->|Processor succeeds| D["COMPLETED"]
 
-    C -->|Processor fails<br/>or times out| E{"Attempts &lt; MaxAttempts?"}
+    C -->|Processor fails<br/>or times out| E{"Attempts &lt;= MaxAttempts?"}
 
     C -->|Lock expires<br/>Sweeper detects zombie| E
 
@@ -20,21 +20,21 @@ flowchart TD
 
     E -->|No| G["DEAD"]
 
-    F -->|Delay elapses<br/>Sweeper migrates| B
-```
+    F -->|Delay elapses<br/>Claim cycle migrates| B
 
+```
 
 ## States
 
 | State | Where it lives | Set by |
-|---|---|---|
+| --- | --- | --- |
 | `waiting` (priority) | `priority` ZSET, scored by `timestamp - priorityOffset` | `addJobtoQueue` Lua |
 | `waiting` (normal) | `normal` ZSET, scored by `timestamp` | `addJobtoQueue` Lua |
 | `waiting` (delayed) | `delay` ZSET, scored by `runAt` | `addJobtoQueue` Lua |
-| `active` | `active` list (`jobId:workerId` entries) + `lock:<jobId>` key | `claimNextJob` Lua |
+| `active` | `active` list (`jobId:workerId` entries) + `lock:<jobId>` key, job hash `status=active` | `claimNextJob` Lua |
 | `completed` | `complete` list, job hash `status=completed` | `checkAndComplete` Lua |
-| `delayed` (retry) | `delay` ZSET, job hash `status=delayed`, `attempt` incremented | `addToDelayedOrDead` Lua or sweeper |
-| `dead` | `dead` list, job hash `status=dead` | `addToDelayedOrDead` Lua or sweeper |
+| `delayed` (retry) | `delay` ZSET, job hash `status=delayed`, `attempt` incremented | `addToDelayedOrDead` Lua or `sweeper` Lua |
+| `dead` | `dead` list, job hash `status=dead` | `addToDelayedOrDead` Lua or `sweeper` Lua |
 
 ## Key invariant: only two ways out of `active`
 
@@ -48,3 +48,5 @@ Because both paths gate on lock ownership, a job can never be double-completed o
 ## Retry accounting
 
 `attempt` is stored on the job's own hash and incremented with `HINCRBY` (atomic, no read-modify-write race) both in the normal failure path and in the sweeper path. This means a job's total attempt count is accurate regardless of *which* mechanism (explicit failure vs. zombie sweep) caused each retry.
+
+```

@@ -9,7 +9,7 @@ class RedisFactory {
 
     static initialize(config = {}) {
         if (!this.#manager) {
-            this.#config = structuredClone(config); 
+            this.#config = JSON.parse(JSON.stringify(config)); 
             this.#manager = new RedisDB(config);
             this.#fetcher = new RedisDB(config);
             this.#refCount++;

@@ -13,6 +13,7 @@ class Jiniq extends EventEmitter {
     #storageInstance;
     #maxQueueSize;
     #bulkChunkSize;
+    #priorityOffset;
 
     constructor(queueName, options = {}) {
         super(); 
@@ -22,6 +23,7 @@ class Jiniq extends EventEmitter {
         
         this.#queueName = queueName.trim();
         this.#maxQueueSize = options.maxQueueSize || 0;
+        this.#priorityOffset = options.priorityOffset ?? 10000;
         this.#bulkChunkSize = options.bulkChunkSize || 1000;
 
 
@@ -60,7 +62,7 @@ class Jiniq extends EventEmitter {
         const serializedJob = job.toRedisHash();
         
         // We access our strictly private storage instance
-        const result = await this.#storageInstance.addJobToQueue(serializedJob, { maxQueueSize: this.#maxQueueSize });
+        const result = await this.#storageInstance.addJobToQueue(serializedJob, { maxQueueSize: this.#maxQueueSize, priorityOffset: this.#priorityOffset });
 
         if (result === 0) {
             console.warn(`[Jiniq Warning] Job with ID ${jobId} already exists. Skipping duplicate insertion.`);
@@ -103,7 +105,8 @@ class Jiniq extends EventEmitter {
         }
         const result = await this.#storageInstance.addBulkJobs(serializedJobs, { 
             maxQueueSize: this.#maxQueueSize,
-            chunkSize: this.#bulkChunkSize 
+            chunkSize: this.#bulkChunkSize ,
+            priorityOffset: this.#priorityOffset
         });
 
         this.emit("jobs:submitted:bulk", { 

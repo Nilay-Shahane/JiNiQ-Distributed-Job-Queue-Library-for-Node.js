@@ -4,7 +4,7 @@ local completeQ  = KEYS[3]
 
 local jobId        = ARGV[1]
 local workerId     = ARGV[2]
-local jobKey       = ARGV[3] -- NEW: Added so we can update the status hash
+local jobKey       = ARGV[3] 
 
 local lockKey = lockPrefix .. ":" .. jobId
 local currentWorker = redis.call('GET', lockKey)
@@ -17,12 +17,12 @@ if currentWorker == workerId then
 
     redis.call('RPUSH', completeQ, jobId)
     
-    -- [THE FIX]: Update the status in the main job hash
-    redis.call('HSET', jobKey, 'status', 'completed')
-
-    -- Note on TTLs: You cannot set a TTL on a specific list element in Redis.
-    -- If you run PEXPIRE here, it will set the TTL for the ENTIRE complete queue.
-    -- redis.call('PEXPIRE', completeQ, ttlCompleted)
+    -- Generate timestamp in milliseconds (TIME returns [seconds, microseconds])
+    local time = redis.call('TIME')
+    local timestampMs = tostring((time[1] * 1000) + math.floor(time[2] / 1000))
+    
+    -- Update the status AND the completedAt timestamp
+    redis.call('HSET', jobKey, 'status', 'completed', 'completedAt', timestampMs)
 
     return 1 -- Success
 end

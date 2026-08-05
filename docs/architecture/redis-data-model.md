@@ -16,7 +16,6 @@ Defined once in `RedisStorage`'s constructor and reused everywhere else in the c
 | `jiniq:<q>:lock:<jobId>` | String, TTL | Ownership lock for an active job. Value is the owning `workerId`. Expires automatically if the heartbeat stops renewing it — this expiry is what the sweeper detects. |
 | `jiniq:<q>:complete` | List | Job IDs that finished successfully. |
 | `jiniq:<q>:dead` | List | Job IDs that exhausted `maxAttempts`. |
-| `jiniq:<q>:notify` | Pub/Sub channel | Published to on every successful `addJobtoQueue` call, so idle workers *could* wake up immediately instead of waiting for their next poll (see [`decisions/polling-over-pubsub.md`](../decisions/polling-over-pubsub.md) for why this isn't the primary claim mechanism today). |
 | `jiniq:<q>:logs` | Stream | Append-only lifecycle log (`started`/`completed`/`failed` events with payload snapshots), capped with `MAXLEN ~ 1000`. Intended for dashboards/observability, not for correctness. |
 
 ## Why priority and normal are separate ZSETs, not one

@@ -10,7 +10,6 @@ class JobExecutor {
     }
 
     beginWork = async () => {
-
         console.log(`\n[Job ${this.jobId}] Started (Worker ${this.workerId})\n`);
 
         const controller = new AbortController();
@@ -27,25 +26,25 @@ class JobExecutor {
         let payload = null;
 
         try {
-
             payload = await this.dbActions.getPayload(this.jobId);
+            if (payload && typeof payload === 'object') {
+                payload.id = this.jobId;
+            }
+
+            // 1. ADDED: Log the 'Started' event properly
+            await this.dbActions.publishLog('Started', payload);
 
             await newHeartbeatInstance.startHeartbeatProcess();
 
             const timeoutPromise = new Promise((_, reject) => {
-
                 timeoutId = setTimeout(() => {
-
                     controller.abort();
-
                     reject(
                         new Error(
                             `JOB_TIMEOUT: Process exceeded ${this.maxTimeoutMs}ms`
                         )
                     );
-
                 }, this.maxTimeoutMs);
-
             });
 
             const resp = await Promise.race([
@@ -56,54 +55,39 @@ class JobExecutor {
             clearTimeout(timeoutId);
             const completed = await this.dbActions.addToCompleted();
             if (completed === 0) {
-
-                    console.log("Zombie worker detected.");
-                    throw new Error("LEASE_LOST");
-
-                }
+                console.log("Zombie worker detected.");
+                throw new Error("LEASE_LOST");
+            }
 
             try {
-
-                
                 if (completed === 1) {
+                    // 2. FIXED: Added this.jobId as the first argument
                     await this.dbActions.publishLog(
                         'Completed',
                         payload
                     );
                 }
-                
-
             } catch (dbErr) {
-
-                console.error(
-                    `[Job ${this.jobId}] Failed to persist completion`
-                );
+                console.error(`[Job ${this.jobId}] Failed to persist completion`);
                 console.error(dbErr);
-
             }
 
             console.log(`\n[Job ${this.jobId}] ✓ Completed\n`);
-
             return resp;
 
         } catch (e) {
-
             clearTimeout(timeoutId);
-
             controller.abort();
+            
             if (e.message === "LEASE_LOST") {
-
-                console.warn(
-                    `[Job ${this.jobId}] Lease lost. Discarding stale result.`
-                );
-
+                console.warn(`[Job ${this.jobId}] Lease lost. Discarding stale result.`);
                 throw e;
             }
 
             try {
-
                 await this.dbActions.addToFailed(e);
 
+                // 3. FIXED: Added this.jobId as the first argument
                 await this.dbActions.publishLog(
                     'Failed',
                     payload,
@@ -111,24 +95,17 @@ class JobExecutor {
                 );
 
             } catch (dbErr) {
-
-                console.error(
-                    `[Job ${this.jobId}] Failed to persist failure`
-                );
+                console.error(`[Job ${this.jobId}] Failed to persist failure`);
                 console.error(dbErr);
-
             }
 
             console.error(`\n[Job ${this.jobId}] ✗ Failed`);
             console.error(e.message);
             console.error();
-
             throw e;
 
         } finally {
-
             newHeartbeatInstance.setStopHeartBeat(true);
-
         }
     }
 }

@@ -12,41 +12,42 @@ class RedisStorage extends BaseStorage {
             lock: `jiniq:${nameOfQ}:lock`,
             complete: `jiniq:${nameOfQ}:complete`,
             delay: `jiniq:${nameOfQ}:delay`,
-            dead: `jiniq:${nameOfQ}:dead`,
-            notify: `jiniq:${nameOfQ}:notify`,
+            dead: `jiniq:${nameOfQ}:dead`
         }
         
         this.manager = ManagerInstance
         this.fetcher = FetcherInstance
     }
 
- async getPayload(jobId) {
+    async getPayload(jobId) {
         const payloadStr = await this.manager.client.hget(`${this.keyMap.main}:${jobId}`, 'payload');
         try {
-            // Turn the string back into a usable object!
             return payloadStr ? JSON.parse(payloadStr) : null;
         } catch (e) {
-            return payloadStr; // Fallback in case it wasn't a JSON object
+            return payloadStr; 
         }
     }
 
     async addJobToQueue(serializedJob, options = {}) {
         const jobId = serializedJob.id;
         const jobKey = `${this.keyMap.main}:${jobId}`;
+        const priorityOffset = options.priorityOffset ?? 10000;
+        
+        // Exactly 4 keys to match RedisDB numberOfKeys: 4
         const keys = [
             jobKey,
             this.keyMap.priority,
             this.keyMap.normal,
-            this.keyMap.delay,
-            this.keyMap.notify
+            this.keyMap.delay
         ];
+        
         const hashArgs = [];
         for (const [key, value] of Object.entries(serializedJob)) {
             let strValue;
             if (value == null) {
-                strValue = " ";
+                strValue = ""; // Bug 23 Fix applied here
             } else if (typeof value === 'object') {
-                strValue = JSON.stringify(value); // Safely convert nested objects to strings
+                strValue = JSON.stringify(value); 
             } else {
                 strValue = value.toString();
             }
@@ -54,7 +55,6 @@ class RedisStorage extends BaseStorage {
         }
         
         const timestamp = Date.now();
-        const priorityOffset = 10000;
         const maxQueueSize = options.maxQueueSize || 0;
 
         const args = [
@@ -66,7 +66,7 @@ class RedisStorage extends BaseStorage {
             maxQueueSize,
             ...hashArgs
         ];
-           
+            
         const result = await this.manager.run('addJobtoQueue', ...keys, ...args);
 
         if (result === -1) {
@@ -86,7 +86,7 @@ class RedisStorage extends BaseStorage {
         const failedJobs = [];
 
         const timestamp = Date.now();
-        const priorityOffset = 10000;
+        const priorityOffset = options.priorityOffset ?? 10000; 
         const maxQueueSize = options.maxQueueSize || 0;
 
         for (let i = 0; i < serializedJobsArray.length; i += CHUNK_SIZE) {
@@ -96,26 +96,27 @@ class RedisStorage extends BaseStorage {
             for (const serializedJob of chunk) {
                 const jobId = serializedJob.id;
                 const jobKey = `${this.keyMap.main}:${jobId}`;
+                
+                // Exactly 4 keys
                 const keys = [
                     jobKey, 
                     this.keyMap.priority, 
                     this.keyMap.normal, 
-                    this.keyMap.delay, 
-                    this.keyMap.notify
+                    this.keyMap.delay
                 ];
                 
                 const hashArgs = [];
-        for (const [key, value] of Object.entries(serializedJob)) {
-            let strValue;
-            if (value == null) {
-                strValue = " ";
-            } else if (typeof value === 'object') {
-                strValue = JSON.stringify(value); // Safely convert nested objects to strings
-            } else {
-                strValue = value.toString();
-            }
-            hashArgs.push(key, strValue);
-        }
+                for (const [key, value] of Object.entries(serializedJob)) {
+                    let strValue;
+                    if (value == null) {
+                        strValue = ""; // Bug 23 Fix applied here
+                    } else if (typeof value === 'object') {
+                        strValue = JSON.stringify(value); 
+                    } else {
+                        strValue = value.toString();
+                    }
+                    hashArgs.push(key, strValue);
+                }
 
                 const args = [
                     jobId,
@@ -140,15 +141,15 @@ class RedisStorage extends BaseStorage {
                     failedJobs.push({ id: originalJobId, reason: err.message });
                 } else {
                     switch (result) {
-                        case 1: // Standard success
-                        case 0: // Idempotent success (already exists)
+                        case 1: 
+                        case 0: 
                             successCount++;
                             break;
-                        case -1: // Known error: Queue Full
+                        case -1: 
                             failedCount++;
                             failedJobs.push({ id: originalJobId, reason: 'QueueFullError: Reached max capacity' });
                             break;
-                        default: // Unknown/Future error codes
+                        default: 
                             failedCount++;
                             failedJobs.push({ id: originalJobId, reason: `UnknownError: Lua script returned unexpected code ${result}` });
                             break;
@@ -168,12 +169,14 @@ class RedisStorage extends BaseStorage {
     async fromWaitingToActive(jobJson) {
         const { ttl = 30000, priorityOffset = 10000, workerId } = jobJson
 
+        // Exactly 6 keys to match RedisDB numberOfKeys: 6
         const keys = [
             this.keyMap.priority,
             this.keyMap.normal, 
             this.keyMap.active,
             this.keyMap.lock,
-            this.keyMap.delay // Added this 5th key for the Lua script
+            this.keyMap.delay,
+            this.keyMap.main 
         ];
 
         const timestamp = Date.now();
@@ -244,26 +247,33 @@ class RedisStorage extends BaseStorage {
         );
     }
 
-   async publishLog(jobId, status, payload, error = null) {
-    const queueName = this.keyMap.main.split(':')[1];
-    const streamKey = `jiniq:${queueName}:logs`;
+  async publishLog(jobId, status, payload, errorMsg = null) {
+        const queueName = this.queueName || (this.keyMap && this.keyMap.main ? this.keyMap.main.split(':')[1] : 'unknown');
+        const streamKey = `jiniq:${queueName}:logs`;
 
-    const payloadStr =
-        typeof payload === "object"
-            ? JSON.stringify(payload)
-            : String(payload);
+        // Safely handle the payload so it never outputs [object Object]
+        let payloadStr = "";
+        try {
+            payloadStr = (payload && typeof payload === "object") 
+                ? JSON.stringify(payload) 
+                : String(payload);
+        } catch (err) {
+            payloadStr = '{"error": "Unparseable Payload"}';
+        }
 
-    await this.manager.client.xadd(
-        streamKey,
-        "MAXLEN", "~", 1000,   // Keep roughly the latest 10k logs
-        "*",
-        "jobId", jobId,
-        "status", status,
-        "payload", payloadStr,
-        "timestamp", Date.now().toString(),
-        "error", error ? String(error) : ""
-    );
-}
+        // Force cast everything to strings to prevent Redis stream crashes
+        await this.manager.client.xadd(
+            streamKey,
+            "MAXLEN", "~", 1000,   
+            "*",
+            "jobId", String(jobId),
+            "status", String(status),
+            "payload", payloadStr,
+            "timestamp", Date.now().toString(),
+            "error", errorMsg ? String(errorMsg) : ""
+        );
+    }
+
     async sweepZombies() {
         const keys = [
             this.keyMap.active,
@@ -287,4 +297,4 @@ class RedisStorage extends BaseStorage {
     }
 }
 
-module.exports = RedisStorage
+module.exports = RedisStorage;

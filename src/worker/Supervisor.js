@@ -18,7 +18,6 @@ class Supervisor extends EventEmitter {
         this.maxConcurrency = jobJson.maxConcurrency;
 
         this.storage = jobJson.storage;
-        this.stateManager = jobJson.stateManager;
 
         this.activeWorkers = new Set();
         this.maxTimeoutMs = jobJson.maxTimeoutMs;

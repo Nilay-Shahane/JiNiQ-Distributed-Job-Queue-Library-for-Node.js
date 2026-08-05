@@ -1,22 +1,13 @@
-/**
- * BaseDB - Abstract Interface for JiNiQ Storage Engines
- * Ensuring consistency across different database implementations.
- */
 class BaseDB {
     constructor() {
         if (this.constructor === BaseDB) {
             throw new Error("BaseDB is an abstract class and cannot be instantiated directly.");
         }
     }
-    async maxRetriesDbConnect(times) {
-        throw new Error("Method 'maxRetriesDbConnect()' must be implemented.");
-    }
-
-    async fromWaitingToActive(jobJson) {
-        throw new Error("Method 'fromWaitingToActive()' must be implemented.");
-    }
-
     
-    
+    async run(command, ...args) { throw new Error("run() must be implemented"); }
+    pipeline() { throw new Error("pipeline() must be implemented"); }
+    async disconnect() { throw new Error("disconnect() must be implemented"); }
 }
+
 module.exports = BaseDB;

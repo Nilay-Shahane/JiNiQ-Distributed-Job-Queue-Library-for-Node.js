@@ -10,7 +10,7 @@ JiNiQ delivers each job **at least once** to a processor function — it does no
 - A worker's heartbeat renewal is delayed past the lease TTL (severe GC pause, Redis latency spike, network hiccup) while the processor function is still legitimately running — the sweeper reclaims the job and a second worker starts it, while the first worker (unaware yet) is still executing.
 - The original worker's `HeartBeat` *will* eventually detect the ownership loss on its next renewal attempt and call `abortFn()` — but "eventually" isn't "instantly," and if your processor function has already caused an external side effect (sent an email, charged a card) before the abort signal arrives, that side effect has already happened once and may happen again from the second worker.
 
-**Duplicate *state corruption* is not possible**, which is a meaningfully different (weaker but still valuable) guarantee — the ownership checks in `checkAndComplete` and `addToDelayedOrDead` (see their respective pages in [`lua/`](../lua/)) mean only one of the two competing workers can successfully report the job's outcome. The queue's own bookkeeping (complete/delay/dead lists, attempt counts) stays correct even when execution duplicates.
+**Duplicate *state corruption* is not possible**, which is a meaningfully different (weaker but still valuable) guarantee — the ownership checks in `checkAndComplete` and `addToDelayedOrDead` (see their respective pages in [`lua-docs/`](../lua-docs/)) mean only one of the two competing workers can successfully report the job's outcome. The queue's own bookkeeping (complete/delay/dead lists, attempt counts) stays correct even when execution duplicates.
 
 ## What this means for your processor functions
 

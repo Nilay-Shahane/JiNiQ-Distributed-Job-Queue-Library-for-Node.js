@@ -1,4 +1,5 @@
 const JobStatus = require('./JobStatus')
+
 class Job {
   #id;
   #name;
@@ -10,7 +11,6 @@ class Job {
   #maxAttempts;
   #delay;
   #ttl;
- #timeout;
 
   #createdAt;
   #updatedAt;
@@ -33,8 +33,7 @@ class Job {
     delay = null,
     runAt = null,
     maxAttempts = 0,
-    ttl = 30000,
-    timeout = null
+    ttl = 30000
   } = {}) {
 
     if (!id) throw new Error("Job must have id");
@@ -54,7 +53,6 @@ class Job {
     this.#priority = validatedPriority;
     this.#delay = delay;
     this.#ttl = ttl;
-    this.#timeout = timeout;
     this.#runAt = runAt;
 
     // state
@@ -78,8 +76,8 @@ class Job {
     this.#finishedOn = null;
   }
 
-//this class i am defing to hash payload and other data different class wasnt created because if would be slow create overhead trigger garbage collection  even mongodb follow this even if domain rule is broken
-toRedisHash() {
+  // this class i am defing to hash payload and other data different class wasnt created because if would be slow create overhead trigger garbage collection even mongodb follow this even if domain rule is broken
+  toRedisHash() {
     return {
       id: this.#id,
       name: this.#name,
@@ -88,7 +86,6 @@ toRedisHash() {
       delay: this.#delay || 0,
       runAt: this.#runAt || 0,
       ttl: this.#ttl,
-      timeout: this.#timeout || 0,
       
       status: this.#status,
       attempt: this.#attempt,
@@ -111,16 +108,15 @@ toRedisHash() {
   
   get id() { return this.#id; }
   get name() { return this.#name; }
-  get payload() {return this.#payload}
+  get payload() { return this.#payload; }
   get priority() { return this.#priority; }
-  get delay() {return this.#delay}
-  get ttl(){return this.#ttl;}
-  get timeout(){return this.#timeout;}
+  get delay() { return this.#delay; }
+  get ttl() { return this.#ttl; }
   get runAt() { return this.#runAt; }
 
   get status() { return this.#status; }
   get attempt() { return this.#attempt; }
-  get maxAttempts() {return this.#maxAttempts;}
+  get maxAttempts() { return this.#maxAttempts; }
 
   get createdAt() { return this.#createdAt; }
   get updatedAt() { return this.#updatedAt; }
@@ -134,7 +130,8 @@ toRedisHash() {
   get stackTrace() { return this.#stackTrace; }
   get workerId() { return this.#workerId; }
   get finishedOn() { return this.#finishedOn; }
-  //now the below method is static  beacause we dont need to create instnace of a job to convert into hash its a already existing job we convert
+
+  // now the below method is static beacause we dont need to create instnace of a job to convert into hash its a already existing job we convert
   static fromRedisHash(rawHash) {
     const job = new Job({
       id: rawHash.id,
@@ -144,11 +141,10 @@ toRedisHash() {
       delay: Number(rawHash.delay) || null,
       runAt: Number(rawHash.runAt) || null,
       maxAttempts: Number(rawHash.maxAttempts) || 0,
-      ttl: Number(rawHash.ttl) || 30000,
-      timeout: Number(rawHash.timeout) || null
+      ttl: Number(rawHash.ttl) || 30000
     });
     
-    //atrribute that are not set in constructor
+    // atrribute that are not set in constructor
     job.#status = rawHash.status;
     job.#attempt = Number(rawHash.attempt) || 0;
     job.#createdAt = Number(rawHash.createdAt);
@@ -165,7 +161,6 @@ toRedisHash() {
 
     return job;
   }
-
 }
 
-module.exports = Job
+module.exports = Job;

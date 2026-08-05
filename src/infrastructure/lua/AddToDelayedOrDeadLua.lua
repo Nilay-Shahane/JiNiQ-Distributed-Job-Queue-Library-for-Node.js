@@ -41,13 +41,12 @@ if currAttempt <= maxAttempt then
     redis.call("ZADD", delayQ, 0, jobId)
 
     redis.call(
-        "HSET",
-        jobKey,
-        "status", "delayed",
-        "lastError", errorMsg,
-        "lastWorker", workerId,
-        "lastFailedAt", tostring(redis.call("TIME")[1])
-    )
+    "HSET", jobKey,
+    "status", "delayed",
+    "failedReason", errorMsg,
+    "workerId", workerId,
+    "failedAt", tostring(redis.call("TIME")[1])
+)
 
     return 1
 end
@@ -59,12 +58,12 @@ end
 redis.call("RPUSH", deadQ, jobId)
 
 redis.call(
-    "HSET",
-    jobKey,
+    "HSET", jobKey,
     "status", "dead",
-    "lastError", errorMsg,
-    "lastWorker", workerId,
-    "lastFailedAt", tostring(redis.call("TIME")[1])
+    "failedReason", errorMsg,       
+    "workerId", workerId,           
+    "failedAt", tostring(redis.call("TIME")[1]),
+    "deadAt", tostring(redis.call("TIME")[1])   -- NEW: tell Job.js when it died
 )
 
 return 2

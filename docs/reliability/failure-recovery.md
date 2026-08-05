@@ -6,13 +6,13 @@ What happens, concretely, for every failure mode JiNiQ is designed to survive.
 
 **Detection:** the crashed worker's `HeartBeat` stops renewing `lock:<jobId>`. The lock expires naturally after its TTL. The job remains listed in the `active` list (nothing removed it — the crash happened before any cleanup code could run).
 
-**Recovery:** on its next tick, *any* live worker's `Sweeper` finds the `active` entry whose `lock:<jobId>` no longer exists, increments `attempt`, and routes the job to `delay` (retry) or `dead` (exhausted) based on `maxAttempts`. See [`lua/sweeper.md`](../lua/sweeper.md).
+**Recovery:** on its next tick, *any* live worker's `Sweeper` finds the `active` entry whose `lock:<jobId>` no longer exists, increments `attempt`, and routes the job to `delay` (retry) or `dead` (exhausted) based on `maxAttempts`. See [`lua-docs/sweeper.md`](../lua-docs/sweeper.md).
 
 **Bound on detection time:** worst case, `ttl + sweeperInterval` — the lock has to fully expire, then a sweep cycle has to run. Tune `lockDuration` and `sweeperInterval` together based on how quickly you need crash recovery vs. how much sweep/heartbeat overhead you're willing to accept.
 
 ## Worker loses network connectivity to Redis (but the process is alive)
 
-Same detection/recovery path as a full crash — from Redis's perspective, a partitioned worker and a dead worker look identical: the lock stops being renewed. The difference only matters locally: if the partition heals *before* the lease is lost to a sweep, the worker's own `HeartBeat.runHeartbeat()` will get a `-1` (ownership mismatch) or `0` (lock gone) response on its next renewal attempt once connectivity returns, and will call `abortFn()` to stop the in-flight job itself — see [`lua/heartbeat.md`](../lua/heartbeat.md). This is what prevents a "the network came back so now two workers are both finishing the same job" scenario.
+Same detection/recovery path as a full crash — from Redis's perspective, a partitioned worker and a dead worker look identical: the lock stops being renewed. The difference only matters locally: if the partition heals *before* the lease is lost to a sweep, the worker's own `HeartBeat.runHeartbeat()` will get a `-1` (ownership mismatch) or `0` (lock gone) response on its next renewal attempt once connectivity returns, and will call `abortFn()` to stop the in-flight job itself — see [`lua-docs/heartbeat.md`](../lua-docs/heartbeat.md). This is what prevents a "the network came back so now two workers are both finishing the same job" scenario.
 
 ## A job's processor function throws
 

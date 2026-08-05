@@ -20,8 +20,8 @@ class Worker extends EventEmitter {
         
         const redisConfig = options.redisConfig || {};
         RedisFactory.initialize(redisConfig);
-        const manager = RedisFactory.getManager(redisConfig);
-        const fetcher = RedisFactory.getFetcher(redisConfig);
+        const manager = RedisFactory.getManager();
+        const fetcher = RedisFactory.getFetcher();
         
         this.#storageInstance = new RedisStorage(queueName, manager, fetcher, redisConfig);
 
