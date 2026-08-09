@@ -1,0 +1,13 @@
+# Ignore tests and local demo files
+test/
+src/test.js
+src/worker_crash_test.js
+
+# Ignore documentation (npm uses the README automatically)
+docs/
+WHY-JiNiQ.md
+
+# Ignore system and AI generated files
+.github/
+repomix-output.xml
+.DS_Store

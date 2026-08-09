@@ -1,5 +1,27 @@
 {
+  "name": "jiniq-js",
+  "version": "1.0.0",
+  "description": "A Redis-backed distributed job queue for Node.js, built for correctness under failure.",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "job",
+    "queue",
+    "redis",
+    "background",
+    "worker",
+    "task",
+    "lua"
+  ],
+  "contributors": [
+    "Jishnu Nair",
+    "Nilay Shahane"
+  ],
+  "license": "MIT",
   "dependencies": {
-    "ioredis": "^6.0.0"
+    "ioredis": "^6.0.0",
+    "jiniq-js": "^1.0.0"
   }
 }

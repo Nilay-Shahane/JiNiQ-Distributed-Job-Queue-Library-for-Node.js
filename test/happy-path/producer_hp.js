@@ -1,4 +1,4 @@
-const Jiniq = require("../../src/queue/Jiniq");
+const { Jiniq }= require("jiniq-js");
 
 (async () => {
 

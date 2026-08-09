@@ -1,4 +1,4 @@
-const Worker = require("../../src/worker/Worker");
+const { Worker } = require("jiniq-js");
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
